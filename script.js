@@ -1,0 +1,194 @@
+// --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ---
+const chatBox = document.getElementById('chatBox');
+const userInput = document.getElementById('userInput');
+const sendBtn = document.getElementById('sendBtn');
+const bookingModal = document.getElementById('bookingModal');
+const voteModal = document.getElementById('voteModal');
+const closeModal = document.querySelector('.close');
+const confirmBookingBtn = document.getElementById('confirmBooking');
+const confirmVoteBtn = document.getElementById('confirmVote');
+
+// --- ИМИТАЦИЯ БАЗЫ ДАННЫХ ---
+const db = {
+    bookings: [],
+    claims: [],
+    karma: 0,
+    votes: [],
+    ads: [],
+    bills: [
+        { id: 1, month: 'Октябрь 2026', amount: 4520.50, status: 'paid', date: '15.11.2026' },
+        { id: 2, month: 'Ноябрь 2026', amount: 4890.00, status: 'due', date: '01.12.2026' }
+    ]
+};
+
+// --- ФУНКЦИИ ОТОБРАЖЕНИЯ СООБЩЕНИЙ ---
+function addMessage(text, sender) {
+    const div = document.createElement('div');
+    div.classList.add('message');
+    div.classList.add(sender === 'user' ? 'user-message' : 'bot-message');
+    div.textContent = text;
+    chatBox.appendChild(div);
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+// --- ФУНКЦИИ РАЗДЕЛОВ ---
+function handleBooking() {
+    addMessage('📅 Что вы хотите забронировать?', 'bot');
+    bookingModal.style.display = 'flex';
+}
+
+function handleVote() {
+    addMessage('🗳️ Создание опроса для жильцов.', 'bot');
+    voteModal.style.display = 'flex';
+}
+
+function handleBoard() {
+    if (db.ads.length === 0) {
+        addMessage('📌 Доска объявлений пуста.', 'bot');
+    } else {
+        addMessage('📌 Последние объявления:', 'bot');
+        db.ads.forEach(ad => {
+            const adDiv = document.createElement('div');
+            adDiv.className = 'ad-card';
+            adDiv.innerHTML = `<strong>${ad.title}</strong><br><small>${ad.author} | ${ad.time}</small><br>${ad.text}`;
+            chatBox.appendChild(adDiv);
+        });
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+    addMessage('Чтобы добавить: "Продам велосипед Stels, 3000р, +79991234567"', 'bot');
+}
+
+function handleAddAd(text) {
+    const parts = text.split(',');
+    if (parts.length >= 3) {
+        const ad = {
+            title: parts[0].replace('Продам', '').trim(),
+            price: parts[1].trim(),
+            phone: parts[2].trim(),
+            author: 'Вы',
+            time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+        };
+        db.ads.push(ad);
+        addMessage('✅ Объявление размещено на доске.', 'bot');
+    } else {
+        addMessage('❗ Не удалось распознать формат. Пример: Продам стол, 1000р, +7900...', 'bot');
+    }
+}
+
+function handleInvoices() {
+    const bill = db.bills.find(b => b.status === 'due');
+    if (bill) {
+        const billDiv = document.createElement('div');
+        billDiv.className = 'bill-card';
+        billDiv.innerHTML = `
+            <div class="bill-header">
+                <span>Квитанция за ${bill.month}</span>
+                <span style="color:#888;">${bill.date}</span>
+            </div>
+            <div>К оплате: <span class="bill-amount">${bill.amount.toLocaleString('ru-RU')} ₽</span></div>
+            <button class="btn-pay" onclick="openPayModal(${bill.amount}, ${bill.id})">Оплатить</button>
+        `;
+        chatBox.appendChild(billDiv);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    } else {
+        addMessage('🟢 У вас нет неоплаченных квитанций.', 'bot');
+    }
+    const oldBills = db.bills.filter(b => b.status === 'paid');
+    if (oldBills.length > 0) {
+        addMessage('📜 История платежей:', 'bot');
+        oldBills.forEach(b => {
+            addMessage(`${b.month}: ${b.amount.toLocaleString('ru-RU')} ₽ (Оплачено ${b.date})`, 'bot');
+        });
+    }
+}
+
+function handleClaim() {
+    addMessage('🛠️ Создаю заявку. Напишите суть проблемы.', 'bot');
+}
+
+function handleClaimStatus() {
+    if (db.claims.length === 0) {
+        addMessage('У вас нет активных заявок.', 'bot');
+    } else {
+        db.claims.forEach((claim, index) => {
+            addMessage(`📋 Заявка №${index + 1}: ${claim.text}`, 'bot');
+            addMessage(`Статус: ${claim.status}`, 'bot');
+        });
+    }
+}
+
+// --- ЛОГИКА МОДАЛЬНЫХ ОКОН ---
+let currentBillId = null;
+
+function openPayModal(amount, id) {
+    currentBillId = id;
+    document.getElementById('payAmount').textContent = amount.toLocaleString('ru-RU');
+    document.getElementById('payLoader').style.display = 'none';
+    document.getElementById('confirmPay').style.display = 'inline-block';
+    document.getElementById('payModal').style.display = 'flex';
+}
+
+// --- ОБРАБОТЧИКИ СОБЫТИЙ ---
+sendBtn.addEventListener('click', () => {
+    const text = userInput.value.trim();
+    if (text) {
+        processUserMessage(text);
+        userInput.value = '';
+    }
+});
+userInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendBtn.click(); });
+
+closeModal.onclick = () => { bookingModal.style.display = 'none'; voteModal.style.display = 'none'; };
+window.onclick = (e) => { 
+    if (e.target === bookingModal || e.target === voteModal) { 
+        bookingModal.style.display = 'none'; voteModal.style.display = 'none'; 
+    } 
+};
+
+confirmBookingBtn.addEventListener('click', () => {
+    const type = document.querySelector('input[name="resourceType"]:checked').value;
+    const isBooked = db.bookings.find(b => b.type === type && b.time === '19:00');
+    if (isBooked) {
+        addMessage('❌ Это место уже занято в 19:00.', 'bot');
+    } else {
+        db.bookings.push({ type: type, time: '19:00' });
+        const names = { washer: 'Стиральная машина', parking: 'Парковка Г-12', bbq: 'Мангальная зона' };
+        addMessage(`🎉 Успех! ${names[type]} забронирована на 19:00.`, 'bot');
+    }
+    bookingModal.style.display = 'none';
+});
+
+confirmVoteBtn.addEventListener('click', () => {
+    const topic = document.getElementById('voteTopic').value;
+    if (!topic) { addMessage('❗ Введите тему опроса.', 'bot'); return; }
+    const vote = { topic: topic, votes: {}, status: 'active' };
+    db.votes.push(vote);
+    addMessage(`🗳️ Голосование «${topic}» запущено!`, 'bot');
+    voteModal.style.display = 'none';
+});
+
+// --- ОСНОВНОЙ ДИСПЕТЧЕР ---
+function processUserMessage(text) {
+    const lower = text.toLowerCase();
+    if (lower.includes('забронировать') || lower.includes('стир') || lower.includes('парк') || lower.includes('мангал')) {
+        handleBooking();
+    } else if (lower.includes('голос') || lower.includes('опрос')) {
+        handleVote();
+    } else if (lower.includes('доск') || lower.includes('объявлен')) {
+        handleBoard();
+    } else if (lower.startsWith('продам') || lower.startsWith('отдам')) {
+        handleAddAd(text);
+    } else if (lower.includes('квитанц') || lower.includes('жкх') || lower.includes('платеж')) {
+        handleInvoices();
+    } else if (lower.includes('статус') || lower.includes('где заявка')) {
+        handleClaimStatus();
+    } else if (lower.includes('заявк') || lower.includes('капает')) {
+        const claim = { text: text, status: 'Принята в работу', id: db.claims.length + 1 };
+        db.claims.push(claim);
+        addMessage(`✉️ Заявка №${claim.id} создана. Статус: ${claim.status}`, 'bot');
+    } else if (lower.includes('привет') || lower.includes('здорово')) {
+        addMessage('И вам не хворать! Чем помочь по дому?', 'bot');
+    } else {
+        addMessage('Я вас понял. Основные разделы: "Забронировать", "Голосование", "Доска", "Заявка", "Квитанция".', 'bot');
+    }
+}
